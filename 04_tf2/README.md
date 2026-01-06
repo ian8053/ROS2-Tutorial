@@ -44,88 +44,151 @@ ros2 run tf2_ros static_transform_publisher \
 
 ### Launch file 發布
 
-```python
-from launch_ros.actions import Node
+```cpp
+// 在 launch file 中使用 (XML 格式)
+// my_robot.launch.xml
+```
 
-Node(
-    package='tf2_ros',
-    executable='static_transform_publisher',
-    arguments=['--x', '0.1', '--y', '0', '--z', '0.2',
-               '--roll', '0', '--pitch', '0', '--yaw', '0',
-               '--frame-id', 'base_link',
-               '--child-frame-id', 'camera_link']
-)
+```xml
+<launch>
+  <node pkg="tf2_ros" exec="static_transform_publisher"
+        args="--x 0.1 --y 0 --z 0.2 --roll 0 --pitch 0 --yaw 0 --frame-id base_link --child-frame-id camera_link"/>
+</launch>
 ```
 
 ## Dynamic Transform (動態轉換)
 
 會隨時間變化的轉換，例如：機器人在地圖中的位置
 
-### Python 範例
+### C++ 範例 - Broadcaster
 
-```python
-import rclpy
-from rclpy.node import Node
-from tf2_ros import TransformBroadcaster
-from geometry_msgs.msg import TransformStamped
-import math
+```cpp
+#include <memory>
+#include <chrono>
 
-class DynamicTFBroadcaster(Node):
-    def __init__(self):
-        super().__init__('dynamic_tf_broadcaster')
-        self.tf_broadcaster = TransformBroadcaster(self)
-        self.timer = self.create_timer(0.1, self.broadcast_timer_callback)
+#include "rclcpp/rclcpp.hpp"
+#include "tf2_ros/transform_broadcaster.h"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 
-    def broadcast_timer_callback(self):
-        t = TransformStamped()
-        t.header.stamp = self.get_clock().now().to_msg()
-        t.header.frame_id = 'world'
-        t.child_frame_id = 'robot'
+using namespace std::chrono_literals;
 
-        # 設定位置
-        t.transform.translation.x = 1.0
-        t.transform.translation.y = 2.0
-        t.transform.translation.z = 0.0
+class DynamicTFBroadcaster : public rclcpp::Node
+{
+public:
+    DynamicTFBroadcaster() : Node("dynamic_tf_broadcaster")
+    {
+        tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+        timer_ = this->create_wall_timer(
+            100ms, std::bind(&DynamicTFBroadcaster::broadcast_timer_callback, this));
+    }
 
-        # 設定旋轉 (quaternion)
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = 0.0
-        t.transform.rotation.w = 1.0
+private:
+    void broadcast_timer_callback()
+    {
+        geometry_msgs::msg::TransformStamped t;
 
-        self.tf_broadcaster.sendTransform(t)
+        t.header.stamp = this->get_clock()->now();
+        t.header.frame_id = "world";
+        t.child_frame_id = "robot";
 
-def main():
-    rclpy.init()
-    node = DynamicTFBroadcaster()
-    rclpy.spin(node)
-    rclpy.shutdown()
+        // 設定位置
+        t.transform.translation.x = 1.0;
+        t.transform.translation.y = 2.0;
+        t.transform.translation.z = 0.0;
+
+        // 設定旋轉 (quaternion)
+        t.transform.rotation.x = 0.0;
+        t.transform.rotation.y = 0.0;
+        t.transform.rotation.z = 0.0;
+        t.transform.rotation.w = 1.0;
+
+        tf_broadcaster_->sendTransform(t);
+    }
+
+    std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int argc, char * argv[])
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<DynamicTFBroadcaster>());
+    rclcpp::shutdown();
+    return 0;
+}
 ```
 
 ## TF Listener (監聽轉換)
 
-```python
-import rclpy
-from rclpy.node import Node
-from tf2_ros import Buffer, TransformListener
+```cpp
+#include <memory>
+#include <chrono>
 
-class TFListener(Node):
-    def __init__(self):
-        super().__init__('tf_listener')
-        self.tf_buffer = Buffer()
-        self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.timer = self.create_timer(1.0, self.timer_callback)
+#include "rclcpp/rclcpp.hpp"
+#include "tf2_ros/buffer.h"
+#include "tf2_ros/transform_listener.h"
+#include "geometry_msgs/msg/transform_stamped.hpp"
 
-    def timer_callback(self):
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                'map',
-                'base_link',
-                rclpy.time.Time()
-            )
-            self.get_logger().info(f'Transform: {transform}')
-        except Exception as e:
-            self.get_logger().warn(f'Could not get transform: {e}')
+using namespace std::chrono_literals;
+
+class TFListener : public rclcpp::Node
+{
+public:
+    TFListener() : Node("tf_listener")
+    {
+        tf_buffer_ = std::make_unique<tf2_ros::Buffer>(this->get_clock());
+        tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
+        timer_ = this->create_wall_timer(
+            1s, std::bind(&TFListener::timer_callback, this));
+    }
+
+private:
+    void timer_callback()
+    {
+        try {
+            auto transform = tf_buffer_->lookupTransform(
+                "map", "base_link", tf2::TimePointZero);
+
+            RCLCPP_INFO(this->get_logger(),
+                "Transform: x=%.2f, y=%.2f, z=%.2f",
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+                transform.transform.translation.z);
+        } catch (const tf2::TransformException & ex) {
+            RCLCPP_WARN(this->get_logger(), "Could not get transform: %s", ex.what());
+        }
+    }
+
+    std::unique_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
+    rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int argc, char * argv[])
+{
+    rclcpp::init(argc, argv);
+    rclcpp::spin(std::make_shared<TFListener>());
+    rclcpp::shutdown();
+    return 0;
+}
+```
+
+### CMakeLists.txt
+
+```cmake
+find_package(tf2_ros REQUIRED)
+find_package(geometry_msgs REQUIRED)
+
+add_executable(tf_broadcaster src/tf_broadcaster.cpp)
+ament_target_dependencies(tf_broadcaster rclcpp tf2_ros geometry_msgs)
+
+add_executable(tf_listener src/tf_listener.cpp)
+ament_target_dependencies(tf_listener rclcpp tf2_ros geometry_msgs)
+
+install(TARGETS
+  tf_broadcaster
+  tf_listener
+  DESTINATION lib/${PROJECT_NAME})
 ```
 
 ## 練習
