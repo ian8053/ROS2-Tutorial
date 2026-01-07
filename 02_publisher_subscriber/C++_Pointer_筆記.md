@@ -304,3 +304,9 @@ void callback(const std_msgs::msg::String::SharedPtr msg) {
 ```
 
 ROS2 大量使用 `shared_ptr` 和 `unique_ptr`，比原始指標更安全，會自動管理記憶體。
+
+---
+
+## 參考資源
+
+- [C++ 指標教學 - C++ Road Advanced](https://cpproadadvanced.blogspot.com/2019/06/c-pointer.html)
