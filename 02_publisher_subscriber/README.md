@@ -4,15 +4,56 @@
 
 Publisher 和 Subscriber 是 ROS2 最基本的通訊模式。
 
-- **Publisher**: 發布訊息到 topic
-- **Subscriber**: 訂閱 topic 並接收訊息
+- **Publisher**: 發布訊息到 Topic
+- **Subscriber**: 訂閱 Topic 並接收訊息
+
+### 架構圖
 
 ```
-┌────────────┐      topic       ┌────────────┐
-│  Publisher │  ──────────────> │ Subscriber │
-│   (發布)   │    /topic_name   │   (訂閱)   │
-└────────────┘                  └────────────┘
+Publisher Node                              Subscriber Node
+(MinimalPublisher)                          (MinimalSubscriber)
+      │                                            ▲
+      │ 發布訊息                                   │ 收到訊息
+      ▼                                            │
+┌──────────────────────────────────────────────────────────┐
+│                    Topic "/topic"                        │
+│                   （邏輯上的頻道名稱）                    │
+├──────────────────────────────────────────────────────────┤
+│                        DDS                               │
+│              （底層傳輸，自動處理）                       │
+└──────────────────────────────────────────────────────────┘
 ```
+
+### Node、Topic、DDS 的關係
+
+| 層級 | 說明 | 你需要管嗎 |
+|------|------|-----------|
+| **Node** | 程式（Publisher Node、Subscriber Node 是兩個獨立程式） | ✅ 你要寫 |
+| **Topic** | 頻道名稱（`/topic`），Node 之間溝通的管道 | ✅ 你要指定 |
+| **DDS** | 底層通訊協定，負責發現節點、傳輸資料 | ❌ 通常不用管 |
+
+### 類比
+
+```
+Topic 像是「電視頻道名稱」
+    ├── /camera/image     ← 攝影機頻道
+    ├── /odom             ← 里程計頻道
+    └── /cmd_vel          ← 速度指令頻道
+
+DDS 像是「有線電視系統」
+    → 負責把訊號從發送端傳到接收端
+    → 你不用管它怎麼傳，只要知道頻道名稱
+```
+
+### 簡化版
+
+```
+Publisher Node ──→ Topic ──→ Subscriber Node
+                    │
+               DDS（底層默默工作）
+```
+
+**重點：Publisher 和 Subscriber 是兩個不同的 Node（獨立程式），透過 Topic 溝通。**
 
 ---
 
